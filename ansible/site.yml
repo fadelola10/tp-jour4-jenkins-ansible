@@ -1,0 +1,42 @@
+---
+- name: Déploiement du site web
+  hosts: web
+  become: true
+  vars:
+    site_title: "Site B3 - Formation Ansible"
+    app_version: "1.0.0"
+  tasks:
+
+    - name: Installer nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+      tags: [install]
+
+    - name: Déployer la page d'accueil
+      ansible.builtin.template:
+        src: templates/index.html.j2
+        dest: /var/www/html/index.html
+        mode: '0644'
+      tags: [content]
+
+    - name: Tester la configuration nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+      tags: [service]
+
+    - name: Démarrer nginx (sans systemd, car conteneur)
+      ansible.builtin.shell: |
+        pgrep nginx > /dev/null || nginx
+      register: nginx_start
+      changed_when: nginx_start.rc == 0
+      failed_when: false
+      tags: [service]
+
+    - name: Vérifier que nginx répond
+      ansible.builtin.wait_for:
+        port: 80
+        host: 127.0.0.1
+        timeout: 10
+      tags: [service]
