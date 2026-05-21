@@ -6,6 +6,14 @@ pipeline {
         ANSIBLE_FORCE_COLOR        = 'true'
     }
 
+    parameters {
+        choice(
+            name: 'ENV',
+            choices: ['dev', 'prod'],
+            description: 'Environnement cible'
+        )
+    }
+
     stages {
 
         stage('Checkout') {
@@ -26,25 +34,35 @@ pipeline {
         stage('Dry Run') {
             steps {
                 dir('ansible') {
-                    sh 'ansible all -m ping'
+                    sh "ansible all -i inventories/${params.ENV}/hosts.ini -m ping"
                 }
+            }
+        }
+
+        stage('Approval (prod)') {
+            when { expression { params.ENV == 'prod' } }
+            steps {
+                input message: 'Déployer en PROD ?', ok: 'GO'
             }
         }
 
         stage('Deploy') {
             steps {
                 dir('ansible') {
-                    sh 'ansible-playbook -i inventory.ini site.yml'
+                    sh "ansible-playbook -i inventories/${params.ENV}/hosts.ini site.yml"
                 }
             }
         }
 
         stage('Smoke Test') {
             steps {
-                sh '''
-                    echo "Test du site sur target1..."
-                    docker exec target1 curl -f -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost
-                '''
+                dir('ansible') {
+                    sh """
+                        TARGET=\$(grep -A1 '\\[web\\]' inventories/${params.ENV}/hosts.ini | tail -1 | awk '{print \$1}')
+                        echo "Test sur \$TARGET..."
+                        docker exec \$TARGET curl -f -s -o /dev/null -w "HTTP %{http_code}\\n" http://localhost
+                    """
+                }
             }
         }
     }
